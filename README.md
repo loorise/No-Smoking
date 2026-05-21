@@ -27,7 +27,32 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 Синхронизация привязана к Telegram user id. Вне Telegram используется `test_user`.
 
-## Запуск локально
+## Telegram Bot (Telegraf)
+
+```bash
+cd bot
+npm install
+```
+
+В корневом `.env` добавь:
+
+```env
+BOT_TOKEN=your-bot-token-from-BotFather
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+```
+
+Запуск:
+
+```bash
+cd bot
+npm start
+```
+
+Команды: `/start` — меню с кнопками «Покурил», «Сколько не курил», «История».  
+`user_id` в Supabase = Telegram `user.id` (как в Mini App).
+
+## Запуск локально (Mini App)
 
 ```bash
 npm install
