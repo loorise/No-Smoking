@@ -1,3 +1,6 @@
+import ws from "ws";
+global.WebSocket = ws;
+
 import { createClient } from '@supabase/supabase-js'
 import { config } from './config.js'
 
