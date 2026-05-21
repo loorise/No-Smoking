@@ -2,112 +2,71 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 0 24px;
-  position: relative;
-  overflow: hidden;
+  padding: 0 28px;
 }
 
-.home-ambient {
-  position: absolute;
-  top: -20%;
-  left: 50%;
-  width: 300px;
-  height: 300px;
-  margin-left: -150px;
-  background: radial-gradient(circle, var(--ambient-glow) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Header - cigarette count */
 .home-header {
-  padding-top: 48px;
+  padding-top: 52px;
   text-align: center;
-  position: relative;
-  z-index: 1;
 }
 
 .smoke-label {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .smoke-count {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .count-number {
   font-family: var(--font-mono);
-  font-size: 56px;
+  font-size: 52px;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
-  letter-spacing: -0.03em;
-  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.count-number.bump {
-  transform: scale(1.15);
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 .count-unit {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
   color: var(--text-muted);
-  letter-spacing: 0.06em;
 }
 
-/* Timer */
 .timer-section {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  position: relative;
-  z-index: 1;
-  gap: 12px;
+  gap: 16px;
+  padding: 24px 0;
 }
 
 .timer-label {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
 .timer-display {
-  position: relative;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
-  transition: color 0.5s ease;
-}
-
-.timer-glow-ring {
-  position: absolute;
-  inset: -16px -24px;
-  border-radius: 24px;
-  pointer-events: none;
-}
-
-.timer-digits {
-  position: relative;
-  z-index: 1;
-}
-
-.timer-digits-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.35s ease;
 }
 
 .timer-display.danger { color: var(--accent); }
@@ -115,45 +74,38 @@
 .timer-display.good { color: var(--good); }
 
 .time-part {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   font-family: var(--font-mono);
-  font-size: clamp(52px, 16vw, 72px);
+  font-size: clamp(56px, 17vw, 76px);
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
   line-height: 1;
   min-width: 2ch;
   text-align: center;
-  overflow: hidden;
-}
-
-.time-part-value {
-  display: inline-block;
 }
 
 .time-colon {
   font-family: var(--font-mono);
-  font-size: clamp(40px, 12vw, 56px);
+  font-size: clamp(44px, 13vw, 58px);
   font-weight: 400;
-  padding-bottom: 4px;
+  opacity: 0.32;
+  line-height: 1;
+  padding-bottom: 0.06em;
 }
 
 .timer-status {
-  height: 24px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .status-text {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 4px 12px;
-  border-radius: 20px;
+  padding: 6px 14px;
+  border-radius: 100px;
 }
 
 .status-text.danger {
@@ -171,71 +123,53 @@
   background: var(--good-soft);
 }
 
-/* Reset button */
 .button-section {
-  padding-bottom: 32px;
+  padding-bottom: 36px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  position: relative;
-  z-index: 1;
+  gap: 14px;
 }
 
 .reset-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   width: 100%;
   max-width: 320px;
-  padding: 18px 32px;
+  padding: 17px 28px;
   background: var(--accent);
   color: var(--btn-text);
   font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   border-radius: var(--radius-lg);
   border: none;
   cursor: pointer;
-  justify-content: center;
-  position: relative;
-  overflow: hidden;
   box-shadow: var(--btn-shadow);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
 
-.reset-btn::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, var(--btn-highlight) 0%, transparent 50%);
-  pointer-events: none;
-  z-index: 1;
+.reset-btn:hover {
+  box-shadow: var(--btn-shadow-hover);
 }
 
-.btn-glow {
-  position: absolute;
-  inset: -4px;
-  border-radius: inherit;
-  background: radial-gradient(circle at 50% 50%, var(--accent-glow) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
+.reset-btn:active {
+  box-shadow: var(--btn-shadow-active);
 }
 
-.btn-content {
-  position: relative;
-  z-index: 2;
+.btn-icon {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.reset-btn .btn-icon {
-  display: flex;
-  align-items: center;
+  opacity: 0.95;
 }
 
 .btn-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }

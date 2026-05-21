@@ -5,12 +5,11 @@
   overflow: hidden;
 }
 
-/* Day Navigator */
 .day-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 16px 0;
+  padding: 24px 20px 8px;
   flex-shrink: 0;
 }
 
@@ -24,18 +23,17 @@
   background: var(--bg-elevated);
   color: var(--text-secondary);
   border: 1px solid var(--border);
-  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
   flex-shrink: 0;
 }
 
 .nav-arrow:active {
-  transform: scale(0.9);
-  background: var(--accent-soft);
-  color: var(--accent);
+  transform: scale(0.96);
+  background: var(--bg-card);
 }
 
 .nav-arrow.disabled {
-  opacity: 0.25;
+  opacity: 0.3;
   pointer-events: none;
 }
 
@@ -43,10 +41,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 8px 14px;
   border-radius: var(--radius-sm);
-  transition: background 0.15s ease;
+  transition: background 0.2s ease;
 }
 
 .day-title:active {
@@ -54,52 +52,42 @@
 }
 
 .day-name {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 .day-return {
   font-size: 11px;
   color: var(--accent);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 500;
 }
 
-/* Summary */
 .day-summary {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 20px 24px 16px;
+  gap: 10px;
+  padding: 16px 28px 20px;
   flex-shrink: 0;
 }
 
 .summary-count {
   font-family: var(--font-mono);
-  font-size: 48px;
+  font-size: 44px;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
   letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 .summary-label {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--text-muted);
-  letter-spacing: 0.02em;
 }
 
-/* Divider line */
-.day-summary::after {
-  content: '';
-  display: block;
-  height: 1px;
-}
-
-/* Scrollable content */
 .history-scroll {
   flex: 1;
   min-height: 0;
@@ -107,31 +95,33 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* Events */
 .events-list {
-  padding: 0 24px 16px;
+  padding: 0 20px 20px;
 }
 
 .stats-footer {
   flex-shrink: 0;
-  padding: 0 16px 12px;
+  padding: 8px 20px 16px;
 }
 
 .events-list-inner {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .event-item {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   background: var(--bg-card);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  transition: background 0.15s ease;
+  transition: background 0.2s ease;
 }
 
 .event-item:active {
@@ -139,19 +129,19 @@
 }
 
 .event-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
-  box-shadow: 0 0 6px var(--accent-glow);
+  opacity: 0.85;
 }
 
 .event-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -160,12 +150,14 @@
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 
 .event-duration {
   font-size: 13px;
+  font-weight: 400;
   color: var(--text-secondary);
-  letter-spacing: 0.01em;
+  line-height: 1.35;
 }
 
 .event-index {
@@ -175,33 +167,32 @@
   flex-shrink: 0;
 }
 
-/* Empty state */
 .empty-state {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding-top: 40px;
+  gap: 14px;
+  padding: 48px 24px 56px;
 }
 
 .empty-icon {
   color: var(--text-muted);
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .empty-text {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--text-secondary);
   text-align: center;
+  line-height: 1.4;
 }
 
 .empty-sub {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--good);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }

@@ -18,6 +18,7 @@ const THEME_VARS = [
   '--ambient-glow',
   '--btn-text',
   '--btn-shadow',
+  '--btn-shadow-hover',
   '--btn-shadow-active',
   '--btn-highlight',
   '--ripple',
@@ -45,13 +46,14 @@ export const DARK_THEME = {
   '--tab-bar-bg': 'rgba(10, 10, 15, 0.95)',
   '--ambient-glow': 'rgba(255, 96, 64, 0.08)',
   '--btn-text': '#ffffff',
-  '--btn-shadow': '0 8px 32px rgba(255, 96, 64, 0.35), 0 2px 8px rgba(255, 96, 64, 0.2)',
-  '--btn-shadow-active': '0 4px 16px rgba(255, 96, 64, 0.3)',
+  '--btn-shadow': '0 1px 2px rgba(0, 0, 0, 0.2)',
+  '--btn-shadow-hover': '0 4px 12px rgba(255, 96, 64, 0.2)',
+  '--btn-shadow-active': '0 1px 3px rgba(0, 0, 0, 0.25)',
   '--btn-highlight': 'rgba(255, 255, 255, 0.15)',
   '--ripple': 'rgba(255, 255, 255, 0.15)',
-  '--glass-bg': 'rgba(17, 17, 24, 0.72)',
-  '--glass-border': 'rgba(255, 255, 255, 0.1)',
-  '--glass-shadow': '0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+  '--glass-bg': 'var(--bg-card)',
+  '--glass-border': 'var(--border)',
+  '--glass-shadow': '0 1px 2px rgba(0, 0, 0, 0.12)',
 }
 
 export const LIGHT_THEME = {
@@ -73,13 +75,14 @@ export const LIGHT_THEME = {
   '--tab-bar-bg': 'rgba(255, 255, 255, 0.92)',
   '--ambient-glow': 'rgba(255, 96, 64, 0.06)',
   '--btn-text': '#ffffff',
-  '--btn-shadow': '0 8px 28px rgba(255, 96, 64, 0.28), 0 2px 8px rgba(255, 96, 64, 0.15)',
-  '--btn-shadow-active': '0 4px 14px rgba(255, 96, 64, 0.22)',
+  '--btn-shadow': '0 1px 2px rgba(0, 0, 0, 0.06)',
+  '--btn-shadow-hover': '0 4px 12px rgba(255, 96, 64, 0.18)',
+  '--btn-shadow-active': '0 1px 2px rgba(0, 0, 0, 0.08)',
   '--btn-highlight': 'rgba(255, 255, 255, 0.25)',
   '--ripple': 'rgba(255, 255, 255, 0.2)',
-  '--glass-bg': 'rgba(255, 255, 255, 0.65)',
-  '--glass-border': 'rgba(255, 255, 255, 0.85)',
-  '--glass-shadow': '0 8px 28px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.9)',
+  '--glass-bg': 'var(--bg-card)',
+  '--glass-border': 'var(--border)',
+  '--glass-shadow': '0 1px 2px rgba(0, 0, 0, 0.04)',
 }
 
 function getTelegramWebApp() {

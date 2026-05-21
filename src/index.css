@@ -70,19 +70,16 @@ button {
   background: none;
 }
 
+body,
 .app,
 .tab-bar,
-.nav-arrow,
-.day-title,
 .event-item,
 .reset-btn,
-.timer-display,
-.status-text {
+.day-stats-card {
   transition:
     background-color var(--transition-theme),
     color var(--transition-theme),
-    border-color var(--transition-theme),
-    box-shadow var(--transition-theme);
+    border-color var(--transition-theme);
 }
 
 /* Scrollbar */

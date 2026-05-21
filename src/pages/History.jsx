@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { getLocalDateKey } from '../hooks/useSmoke'
 import { getStartOfLocalDay } from '../utils/localDate'
 import { calcDayStats } from '../utils/dayStats'
@@ -100,65 +99,32 @@ export default function History({
   return (
     <div className="history">
       <div className="day-nav">
-        <motion.button
-          className="nav-arrow"
-          onClick={goBack}
-          aria-label="Предыдущий день"
-          whileTap={{ scale: 0.9 }}
-        >
+        <button type="button" className="nav-arrow" onClick={goBack} aria-label="Предыдущий день">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-        </motion.button>
+        </button>
 
-        <motion.button
-          className="day-title"
-          onClick={goToday}
-          whileTap={{ scale: 0.98 }}
-        >
-          <AnimatePresence mode="wait">
-            <motion.span
-              key={dayKey}
-              className="day-name"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.2 }}
-            >
-              {formatDate(currentDate)}
-            </motion.span>
-          </AnimatePresence>
-          {!isToday && (
-            <span className="day-return">↩ сегодня</span>
-          )}
-        </motion.button>
+        <button type="button" className="day-title" onClick={goToday}>
+          <span className="day-name">{formatDate(currentDate)}</span>
+          {!isToday && <span className="day-return">↩ сегодня</span>}
+        </button>
 
-        <motion.button
+        <button
+          type="button"
           className={`nav-arrow ${!canGoForward ? 'disabled' : ''}`}
           onClick={goForward}
           disabled={!canGoForward}
           aria-label="Следующий день"
-          whileTap={canGoForward ? { scale: 0.9 } : undefined}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-        </motion.button>
+        </button>
       </div>
 
       <div className="day-summary">
-        <AnimatePresence mode="wait">
-          <motion.span
-            key={`${dayKey}-${events.length}`}
-            className="summary-count"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.05 }}
-            transition={{ duration: 0.25 }}
-          >
-            {events.length}
-          </motion.span>
-        </AnimatePresence>
+        <span className="summary-count">{events.length}</span>
         <span className="summary-label">
           {events.length === 1 ? 'сигарета' : events.length >= 2 && events.length <= 4 ? 'сигареты' : 'сигарет'}
         </span>
@@ -166,16 +132,8 @@ export default function History({
 
       <div className="history-scroll">
         <div className="events-list">
-        <AnimatePresence mode="wait">
           {events.length === 0 ? (
-            <motion.div
-              key={`empty-${dayKey}`}
-              className="empty-state"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.25 }}
-            >
+            <div className="empty-state" key={`empty-${dayKey}`}>
               <div className="empty-icon">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
                   <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1" opacity="0.3"/>
@@ -186,52 +144,30 @@ export default function History({
                 {isToday ? 'Ни одной сигареты сегодня' : 'Записей за этот день нет'}
               </p>
               {isToday && <p className="empty-sub">так держать!</p>}
-            </motion.div>
+            </div>
           ) : (
-            <motion.div
-              key={`list-${dayKey}`}
-              className="events-list-inner"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <AnimatePresence mode="popLayout">
-                {events.map((event, i) => (
-                  <motion.div
-                    key={event.id}
-                    className="event-item"
-                    layout
-                    initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{
-                      duration: 0.3,
-                      delay: Math.min(i * 0.04, 0.24),
-                      ease: [0.25, 0.1, 0.25, 1],
-                    }}
-                  >
-                    <div className="event-dot" />
-                    <div className="event-content">
-                      <span className="event-action">
-                        Покурил — {formatSmokeDateTime(event.timestamp)}
-                      </span>
-                      <span className="event-duration">
-                        {formatDuration(event.duration)}
-                      </span>
-                    </div>
-                    <span className="event-index">#{events.length - i}</span>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </motion.div>
+            <ul className="events-list-inner" key={`list-${dayKey}`}>
+              {events.map((event, i) => (
+                <li key={event.id} className="event-item">
+                  <span className="event-dot" aria-hidden />
+                  <div className="event-content">
+                    <span className="event-action">
+                      Покурил — {formatSmokeDateTime(event.timestamp)}
+                    </span>
+                    <span className="event-duration">
+                      {formatDuration(event.duration)}
+                    </span>
+                  </div>
+                  <span className="event-index">#{events.length - i}</span>
+                </li>
+              ))}
+            </ul>
           )}
-        </AnimatePresence>
         </div>
       </div>
 
       <footer className="stats-footer">
-        <DayStatsCard stats={dayStats} dayKey={`${dayKey}-${midnightTick}`} />
+        <DayStatsCard stats={dayStats} />
       </footer>
     </div>
   )
