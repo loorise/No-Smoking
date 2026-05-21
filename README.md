@@ -22,8 +22,16 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
 4. Перезапусти dev-сервер
+5. Для мгновенной синхронизации удалений: **Database → Replication** — включи `smoking_events` для Realtime
 
-Без `.env` приложение работает только с **localStorage** (как раньше).
+Если проект уже создан раньше, в SQL Editor выполни политику удаления из `supabase/schema.sql` (`smoking_events_delete_own`).
+
+Без `.env` приложение работает только с **localStorage** (offline-режим).
+
+При настроенном Supabase:
+- источник данных — только таблица `smoking_events`;
+- `smoke_tracker_events` **не читается** (ключ очищается после первой успешной загрузки);
+- `smoke_offline_cache` — только fallback при ошибке сети.
 
 Синхронизация привязана к Telegram user id. Вне Telegram используется `test_user`.
 

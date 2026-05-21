@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useCallback, useState } from 'react'
 import { getLocalDateKey } from '../hooks/useSmoke'
 import { getStartOfLocalDay } from '../utils/localDate'
 import { calcDayStats } from '../utils/dayStats'
+import ConfirmDialog from '../components/ConfirmDialog'
 import DayStatsCard from '../components/DayStatsCard'
 import './History.css'
 
@@ -54,8 +55,12 @@ export default function History({
   events: allEvents = [],
   selectedDate,
   setSelectedDate,
+  removeEvent,
   midnightTick = 0,
 }) {
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
   const currentDate = selectedDate
 
   const events = useMemo(() => {
@@ -95,6 +100,37 @@ export default function History({
   const goToday = () => {
     setSelectedDate(getStartOfLocalDay())
   }
+
+  const openDeleteConfirm = useCallback((event, e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setPendingDelete(event)
+  }, [])
+
+  const closeDeleteConfirm = useCallback(() => {
+    if (!isDeleting) {
+      setPendingDelete(null)
+    }
+  }, [isDeleting])
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete || !removeEvent || isDeleting) return
+
+    const event = pendingDelete
+    setIsDeleting(true)
+
+    try {
+      const ok = await removeEvent(event.id)
+      if (ok) {
+        setPendingDelete(null)
+        try {
+          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
+        } catch {}
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }, [pendingDelete, removeEvent, isDeleting])
 
   return (
     <div className="history">
@@ -159,6 +195,23 @@ export default function History({
                     </span>
                   </div>
                   <span className="event-index">#{events.length - i}</span>
+                  <button
+                    type="button"
+                    className="event-delete"
+                    onClick={e => openDeleteConfirm(event, e)}
+                    disabled={isDeleting}
+                    aria-label="Удалить запись"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path
+                        d="M9 9h6M10 11v6M14 11v6M6 7h12l-1 14H7L6 7zM9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -169,6 +222,19 @@ export default function History({
       <footer className="stats-footer">
         <DayStatsCard stats={dayStats} />
       </footer>
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        message={
+          pendingDelete
+            ? `Удалить запись от ${formatSmokeDateTime(pendingDelete.timestamp)}?`
+            : ''
+        }
+        confirmLabel={isDeleting ? 'Удаление…' : 'Удалить'}
+        busy={isDeleting}
+        onConfirm={confirmDelete}
+        onCancel={closeDeleteConfirm}
+      />
     </div>
   )
 }

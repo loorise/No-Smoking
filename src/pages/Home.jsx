@@ -17,16 +17,14 @@ function getTimerClass(elapsed) {
   return 'good'
 }
 
-export default function Home({ elapsed, reset, getTodayCount, dayKey }) {
+export default function Home({ elapsed, isHydrated, reset, getTodayCount, dayKey }) {
   const count = getTodayCount()
-  const [hh, mm, ss] = formatTime(elapsed)
-  const timerClass = getTimerClass(elapsed)
+  const displayElapsed = isHydrated ? elapsed : 0
+  const [hh, mm, ss] = formatTime(displayElapsed)
+  const timerClass = isHydrated ? getTimerClass(displayElapsed) : 'good'
 
   const handleReset = () => {
     reset()
-    try {
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
-    } catch {}
   }
 
   return (

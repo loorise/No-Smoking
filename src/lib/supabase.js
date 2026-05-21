@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { waitForUserId } from './telegramAuth'
+import { getUserId, waitForUserId } from './telegramAuth'
+import { sortEventsByTimestamp } from '../utils/timer'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -20,12 +21,54 @@ function normalizeEvent(row) {
   }
 }
 
+async function resolveSupabaseUserId(maxWaitMs = 15000) {
+  const waited = await waitForUserId({ maxWaitMs, intervalMs: 100 })
+  return waited ?? getUserId()
+}
+
+export async function fetchEvents() {
+  if (!supabase) {
+    return { ok: false, events: [], error: 'not_configured', userId: null }
+  }
+
+  const userId = await resolveSupabaseUserId(15000)
+  if (!userId) {
+    return { ok: false, events: [], error: 'no_user_id', userId: null }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('id, timestamp, duration')
+      .eq('user_id', userId)
+      .order('timestamp', { ascending: true })
+
+    if (error) {
+      return { ok: false, events: [], error: error.message, userId }
+    }
+
+    const events = sortEventsByTimestamp((data ?? []).map(normalizeEvent))
+
+    return { ok: true, events, userId }
+  } catch (err) {
+    return {
+      ok: false,
+      events: [],
+      error: err?.message ?? 'unknown_error',
+      userId,
+    }
+  }
+}
+
+/** @deprecated use fetchEvents */
+export const getSmokingEvents = fetchEvents
+
 export async function addSmokingEvent(event) {
   if (!supabase) {
     return { ok: false, error: 'not_configured' }
   }
 
-  const userId = await waitForUserId({ maxWaitMs: 3000 })
+  const userId = await resolveSupabaseUserId(10000)
   if (!userId) {
     return { ok: false, error: 'no_user_id' }
   }
@@ -51,74 +94,46 @@ export async function addSmokingEvent(event) {
   }
 }
 
-export async function getLastSmokingEvent() {
+export async function deleteSmokingEvent(eventId) {
   if (!supabase) {
-    return { ok: false, event: null, error: 'not_configured' }
+    return { ok: false, error: 'not_configured' }
   }
 
-  const userId = await waitForUserId({ maxWaitMs: 5000 })
+  const userId = await resolveSupabaseUserId(10000)
   if (!userId) {
-    return { ok: false, event: null, error: 'no_user_id' }
+    return { ok: false, error: 'no_user_id' }
   }
 
   try {
+    const id = Number(eventId)
     const { data, error } = await supabase
       .from(TABLE)
-      .select('id, timestamp, duration')
+      .delete()
+      .eq('id', id)
       .eq('user_id', userId)
-      .order('timestamp', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .select('id')
 
     if (error) {
-      return { ok: false, event: null, error: error.message }
+      return { ok: false, error: error.message, userId }
     }
 
-    return {
-      ok: true,
-      event: data ? normalizeEvent(data) : null,
-      userId,
+    if (!data?.length) {
+      return { ok: false, error: 'not_found_or_policy_denied', userId }
     }
+
+    console.log('[smoke] delete success id', id, 'user', userId)
+    return { ok: true, userId, deletedId: id }
   } catch (err) {
-    return {
-      ok: false,
-      event: null,
-      error: err?.message ?? 'unknown_error',
-    }
+    return { ok: false, error: err?.message ?? 'unknown_error', userId }
   }
 }
 
-export async function getSmokingEvents() {
-  if (!supabase) {
-    return { ok: false, events: [], error: 'not_configured' }
+export async function getLastSmokingEvent() {
+  const result = await fetchEvents()
+  if (!result.ok) {
+    return { ok: false, event: null, error: result.error }
   }
 
-  const userId = await waitForUserId({ maxWaitMs: 5000 })
-  if (!userId) {
-    return { ok: false, events: [], error: 'no_user_id' }
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from(TABLE)
-      .select('id, timestamp, duration')
-      .eq('user_id', userId)
-      .order('timestamp', { ascending: true })
-
-    if (error) {
-      return { ok: false, events: [], error: error.message }
-    }
-
-    return {
-      ok: true,
-      events: (data ?? []).map(normalizeEvent),
-      userId,
-    }
-  } catch (err) {
-    return {
-      ok: false,
-      events: [],
-      error: err?.message ?? 'unknown_error',
-    }
-  }
+  const latest = result.events[result.events.length - 1] ?? null
+  return { ok: true, event: latest, userId: result.userId }
 }

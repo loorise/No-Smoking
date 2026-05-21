@@ -191,6 +191,41 @@
   font-variant-numeric: tabular-nums;
 }
 
+.event-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: -6px -4px -6px 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  touch-action: manipulation;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.event-delete:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .event-delete:hover {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+}
+
+.event-delete:active {
+  opacity: 0.7;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;

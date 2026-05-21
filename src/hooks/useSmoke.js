@@ -1,138 +1,270 @@
-import { useState, useEffect, useCallback } from 'react'
-import { addSmokingEvent, getSmokingEvents } from '../lib/supabase'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  addSmokingEvent,
+  deleteSmokingEvent,
+  fetchEvents,
+  isSupabaseConfigured,
+  supabase,
+} from '../lib/supabase'
+import {
+  clearLegacyStorage,
+  loadOfflineEvents,
+  saveOfflineCache,
+  saveOfflineEvents,
+} from '../lib/eventStorage'
+import { waitForUserId } from '../lib/telegramAuth'
 import { getLocalDateKey } from '../utils/localDate'
-import { getElapsedSeconds, getLastSmokedTimestamp } from '../utils/timer'
+import {
+  getElapsedSeconds,
+  getLastSmokedTimestamp,
+  getLatestEvent,
+  normalizeEventDurations,
+  sortEventsByTimestamp,
+} from '../utils/timer'
 
 export { getLocalDateKey } from '../utils/localDate'
 
-const STORAGE_KEY = 'smoke_tracker_events'
-const LEGACY_TIMER_KEY = 'smoke_timer_start'
+const useCloud = isSupabaseConfigured
+const LOG = '[smoke/sync]'
 
-function getStoredEvents() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function saveEvents(events) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(events))
-  } catch {}
-}
-
-function mergeEvents(...lists) {
-  const map = new Map()
-  for (const list of lists) {
-    for (const event of list) {
-      if (!event?.id || !event?.timestamp) continue
-      const existing = map.get(event.id)
-      if (!existing || existing.timestamp < event.timestamp) {
-        map.set(event.id, {
-          id: Number(event.id),
-          timestamp: Number(event.timestamp),
-          duration: Number(event.duration ?? 0),
-        })
-      }
-    }
-  }
-  return [...map.values()].sort((a, b) => a.timestamp - b.timestamp)
+function logLatest(events, label) {
+  const latest = getLatestEvent(events)
+  console.log(`${LOG} ${label} latest event id`, latest?.id ?? null, 'count', events.length)
 }
 
 export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
-  const [events, setEvents] = useState(() => getStoredEvents())
-  const [elapsed, setElapsed] = useState(() => getElapsedSeconds(getStoredEvents()))
+  const [events, setEvents] = useState([])
+  const [elapsed, setElapsed] = useState(0)
+  const [isHydrated, setIsHydrated] = useState(!useCloud)
 
-  useEffect(() => {
-    try {
-      localStorage.removeItem(LEGACY_TIMER_KEY)
-    } catch {}
+  const eventsRef = useRef([])
+  const syncGenerationRef = useRef(0)
+  const isDeletingRef = useRef(false)
+  const isHydratedRef = useRef(!useCloud)
+
+  const commitEvents = useCallback((rawEvents, source) => {
+    const sorted = sortEventsByTimestamp(rawEvents)
+    const normalized = normalizeEventDurations(sorted)
+
+    eventsRef.current = normalized
+    setEvents(normalized)
+    setElapsed(getElapsedSeconds(normalized))
+    logLatest(normalized, source)
+
+    if (useCloud) {
+      saveOfflineCache(normalized)
+    } else {
+      saveOfflineEvents(normalized)
+    }
+
+    return normalized
   }, [])
 
+  const pullFromSupabase = useCallback(
+    async (source, { force = false } = {}) => {
+      if (!useCloud) {
+        const local = loadOfflineEvents()
+        console.log(`${LOG} ${source} offline events`, local)
+        return commitEvents(local, source)
+      }
+
+      if (isDeletingRef.current && !force) {
+        return eventsRef.current
+      }
+
+      const generation = ++syncGenerationRef.current
+      const result = await fetchEvents()
+
+      if (generation !== syncGenerationRef.current) {
+        return eventsRef.current
+      }
+
+      if (!result.ok) {
+        console.warn(`${LOG} fetch failed (${source})`, result.error, 'user', result.userId)
+        return null
+      }
+
+      console.log(`${LOG} ${source} fetched events`, result.events, 'user', result.userId)
+      clearLegacyStorage()
+      return commitEvents(result.events, source)
+    },
+    [commitEvents],
+  )
+
+  const pullFromSupabaseRef = useRef(pullFromSupabase)
+  pullFromSupabaseRef.current = pullFromSupabase
+
   useEffect(() => {
-    saveEvents(events)
-  }, [events])
+    isHydratedRef.current = isHydrated
+  }, [isHydrated])
 
-  const applyEvents = useCallback((nextEvents) => {
-    setEvents(nextEvents)
-    setElapsed(getElapsedSeconds(nextEvents))
-  }, [])
+  useEffect(() => {
+    let cancelled = false
 
-  const syncFromCloud = useCallback(async () => {
-    const local = getStoredEvents()
-    const result = await getSmokingEvents()
+    async function bootstrap() {
+      if (!useCloud) {
+        const local = loadOfflineEvents()
+        console.log(`${LOG} initial offline events`, local)
+        if (!cancelled) {
+          commitEvents(local, 'initial-offline')
+          setIsHydrated(true)
+        }
+        return
+      }
 
-    if (result.ok) {
-      const merged = mergeEvents(local, result.events)
-      applyEvents(merged)
-      saveEvents(merged)
-      return merged
+      for (let attempt = 0; attempt < 50 && !cancelled; attempt += 1) {
+        const committed = await pullFromSupabaseRef.current('initial', { force: true })
+
+        if (committed != null) {
+          if (!cancelled) {
+            setIsHydrated(true)
+            console.log(`${LOG} hydration complete (attempt ${attempt + 1})`)
+          }
+          return
+        }
+
+        await new Promise(r => setTimeout(r, 300))
+      }
+
+      console.error(`${LOG} initial fetch failed after retries`)
     }
 
-    if (result.error === 'no_user_id') {
-      console.warn('[smoke] Cloud sync skipped: Telegram user id not ready')
-    }
+    bootstrap()
 
-    if (local.length > 0) {
-      applyEvents(local)
+    return () => {
+      cancelled = true
     }
-
-    return local
-  }, [applyEvents])
+  }, [commitEvents])
 
   useEffect(() => {
-    syncFromCloud()
-  }, [syncFromCloud])
+    if (!useCloud || !isHydrated) return undefined
 
-  useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        syncFromCloud()
+      if (document.visibilityState === 'visible' && !isDeletingRef.current) {
+        pullFromSupabaseRef.current('visibility')
       }
     }
 
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [syncFromCloud])
+  }, [isHydrated])
 
   useEffect(() => {
+    if (!useCloud || !supabase || !isHydrated) return undefined
+
+    let channel
+    let cancelled = false
+
+    const subscribe = async () => {
+      const userId = await waitForUserId({ maxWaitMs: 15000 })
+      if (!userId || cancelled) return
+
+      channel = supabase
+        .channel(`smoking_events:${userId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'smoking_events',
+            filter: `user_id=eq.${userId}`,
+          },
+          payload => {
+            console.log(`${LOG} realtime`, payload.eventType, {
+              new: payload.new,
+              old: payload.old,
+            })
+
+            if (isDeletingRef.current) return
+
+            pullFromSupabaseRef.current('realtime')
+          },
+        )
+        .subscribe()
+    }
+
+    subscribe()
+
+    return () => {
+      cancelled = true
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [isHydrated])
+
+  useEffect(() => {
+    if (!isHydrated) return undefined
+
     const tick = () => {
-      setElapsed(getElapsedSeconds(events))
+      setElapsed(getElapsedSeconds(eventsRef.current))
     }
 
     tick()
     const interval = setInterval(tick, 1000)
     return () => clearInterval(interval)
-  }, [events])
+  }, [isHydrated])
 
-  const reset = useCallback(() => {
+  const reset = useCallback(async () => {
     const now = Date.now()
-    const lastTs = getLastSmokedTimestamp(events)
+    const lastTs = getLastSmokedTimestamp(eventsRef.current)
     const duration = Math.floor((now - lastTs) / 1000)
     const event = { id: now, timestamp: now, duration }
 
-    setEvents(prev => {
-      const next = [...prev, event]
-      setElapsed(getElapsedSeconds(next))
-      return next
-    })
+    if (!useCloud) {
+      const next = normalizeEventDurations([...eventsRef.current, event])
+      commitEvents(next, 'add-offline')
+      try {
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
+      } catch {}
+      return true
+    }
 
-    addSmokingEvent(event).then(result => {
-      if (!result.ok) {
-        console.warn('[smoke] Supabase save failed, using localStorage:', result.error)
-        return
-      }
-      syncFromCloud()
-    })
+    const result = await addSmokingEvent(event)
+    if (!result.ok) {
+      console.warn(`${LOG} add failed`, result.error)
+      return false
+    }
+
+    await pullFromSupabase('after-add', { force: true })
 
     try {
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
     } catch {}
-  }, [events, syncFromCloud])
+
+    return true
+  }, [commitEvents, pullFromSupabase])
+
+  const removeEvent = useCallback(
+    async (eventId) => {
+      const id = Number(eventId)
+      if (!Number.isFinite(id)) return false
+
+      if (!useCloud) {
+        const next = eventsRef.current.filter(e => Number(e.id) !== id)
+        commitEvents(next, 'delete-offline')
+        return true
+      }
+
+      isDeletingRef.current = true
+      syncGenerationRef.current += 1
+
+      try {
+        const result = await deleteSmokingEvent(id)
+
+        if (!result.ok) {
+          console.warn(`${LOG} delete failed id`, id, result.error)
+          return false
+        }
+
+        const committed = await pullFromSupabase('after-delete', { force: true })
+        return committed != null
+      } finally {
+        isDeletingRef.current = false
+      }
+    },
+    [commitEvents, pullFromSupabase],
+  )
 
   const getTodayCount = useCallback(() => {
     const todayKey = todayDayKey ?? getLocalDateKey(new Date())
@@ -149,9 +281,12 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
   return {
     events,
     elapsed,
+    isHydrated,
     reset,
+    removeEvent,
     getTodayCount,
     getEventsForDay,
     midnightTick,
+    refresh: () => pullFromSupabase('manual', { force: true }),
   }
 }

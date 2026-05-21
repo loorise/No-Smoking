@@ -31,3 +31,10 @@ create policy "smoking_events_update_own"
   for update
   using (true)
   with check (true);
+
+create policy "smoking_events_delete_own"
+  on public.smoking_events
+  for delete
+  using (true);
+
+-- Supabase Dashboard → Database → Replication: enable smoking_events for Realtime
