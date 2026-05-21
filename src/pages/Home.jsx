@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion'
 import './Home.css'
 
 function formatTime(seconds) {
@@ -65,14 +64,7 @@ export default function Home({ elapsed, reset, getTodayCount, dayKey }) {
       </section>
 
       <section className="button-section">
-        <motion.button
-          type="button"
-          className="reset-btn"
-          onClick={handleReset}
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-        >
+        <button type="button" className="reset-btn" onClick={handleReset}>
           <span className="btn-icon" aria-hidden>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
               <path d="M12 5V3m0 2a7 7 0 110 14A7 7 0 0112 5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -80,7 +72,7 @@ export default function Home({ elapsed, reset, getTodayCount, dayKey }) {
             </svg>
           </span>
           <span className="btn-label">Покурил</span>
-        </motion.button>
+        </button>
         <p className="btn-hint">нажми, чтобы сбросить таймер</p>
       </section>
     </div>

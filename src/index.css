@@ -2,12 +2,11 @@
   --tab-height: 64px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
-  --font-mono: 'Space Mono', monospace;
-  --font-sans: 'Syne', sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 
   --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
+  --radius-md: 14px;
+  --radius-lg: 14px;
 
   --transition-theme: 0.3s ease;
 }
@@ -53,6 +52,7 @@ body {
   background: var(--bg);
   color: var(--text-primary);
   font-family: var(--font-sans);
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior: none;
