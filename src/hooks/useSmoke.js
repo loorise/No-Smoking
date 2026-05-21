@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { addSmokingEvent, getSmokingEvents } from '../lib/supabase'
 import { getLocalDateKey } from '../utils/localDate'
+import { getElapsedSeconds, getLastSmokedTimestamp } from '../utils/timer'
 
 export { getLocalDateKey } from '../utils/localDate'
 
 const STORAGE_KEY = 'smoke_tracker_events'
-const TIMER_KEY = 'smoke_timer_start'
+const LEGACY_TIMER_KEY = 'smoke_timer_start'
 
 function getStoredEvents() {
   try {
@@ -44,67 +45,94 @@ function mergeEvents(...lists) {
 
 export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
   const [events, setEvents] = useState(() => getStoredEvents())
-  const [timerStart, setTimerStart] = useState(() => {
-    const stored = localStorage.getItem(TIMER_KEY)
-    return stored ? Number(stored) : Date.now()
-  })
-  const [elapsed, setElapsed] = useState(0)
+  const [elapsed, setElapsed] = useState(() => getElapsedSeconds(getStoredEvents()))
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_TIMER_KEY)
+    } catch {}
+  }, [])
+
   useEffect(() => {
     saveEvents(events)
   }, [events])
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function syncFromCloud() {
-      const local = getStoredEvents()
-      const result = await getSmokingEvents()
-
-      if (cancelled) return
-
-      if (result.ok) {
-        const merged = mergeEvents(local, result.events)
-        setEvents(merged)
-        saveEvents(merged)
-      } else if (local.length > 0) {
-        setEvents(local)
-      }
-
-    }
-
-    syncFromCloud()
-    return () => {
-      cancelled = true
-    }
+  const applyEvents = useCallback((nextEvents) => {
+    setEvents(nextEvents)
+    setElapsed(getElapsedSeconds(nextEvents))
   }, [])
 
+  const syncFromCloud = useCallback(async () => {
+    const local = getStoredEvents()
+    const result = await getSmokingEvents()
+
+    if (result.ok) {
+      const merged = mergeEvents(local, result.events)
+      applyEvents(merged)
+      saveEvents(merged)
+      return merged
+    }
+
+    if (result.error === 'no_user_id') {
+      console.warn('[smoke] Cloud sync skipped: Telegram user id not ready')
+    }
+
+    if (local.length > 0) {
+      applyEvents(local)
+    }
+
+    return local
+  }, [applyEvents])
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - timerStart) / 1000))
-    }, 1000)
+    syncFromCloud()
+  }, [syncFromCloud])
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        syncFromCloud()
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [syncFromCloud])
+
+  useEffect(() => {
+    const tick = () => {
+      setElapsed(getElapsedSeconds(events))
+    }
+
+    tick()
+    const interval = setInterval(tick, 1000)
     return () => clearInterval(interval)
-  }, [timerStart])
+  }, [events])
 
   const reset = useCallback(() => {
     const now = Date.now()
-    const duration = Math.floor((now - timerStart) / 1000)
+    const lastTs = getLastSmokedTimestamp(events)
+    const duration = Math.floor((now - lastTs) / 1000)
     const event = { id: now, timestamp: now, duration }
 
-    setEvents(prev => [...prev, event])
-    setTimerStart(now)
-    setElapsed(0)
-    localStorage.setItem(TIMER_KEY, String(now))
+    setEvents(prev => {
+      const next = [...prev, event]
+      setElapsed(getElapsedSeconds(next))
+      return next
+    })
 
     addSmokingEvent(event).then(result => {
       if (!result.ok) {
         console.warn('[smoke] Supabase save failed, using localStorage:', result.error)
+        return
       }
+      syncFromCloud()
     })
 
     try {
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
     } catch {}
-  }, [timerStart])
+  }, [events, syncFromCloud])
 
   const getTodayCount = useCallback(() => {
     const todayKey = todayDayKey ?? getLocalDateKey(new Date())
