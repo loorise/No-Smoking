@@ -215,6 +215,35 @@
   pointer-events: none;
 }
 
+.event-item--deleting {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.event-delete-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--text-muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: event-delete-spin 0.7s linear infinite;
+}
+
+@keyframes event-delete-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.history--busy {
+  pointer-events: none;
+}
+
+.history--busy .event-delete,
+.history--busy .confirm-overlay {
+  pointer-events: auto;
+}
+
 @media (hover: hover) {
   .event-delete:hover {
     color: var(--accent);

@@ -25,22 +25,33 @@ import {
 export { getLocalDateKey } from '../utils/localDate'
 
 const useCloud = isSupabaseConfigured
-const LOG = '[smoke/sync]'
+const REALTIME_DEBOUNCE_MS = 450
+const REALTIME_SUPPRESS_MS = 1200
 
 function logLatest(events, label) {
   const latest = getLatestEvent(events)
-  console.log(`${LOG} ${label} latest event id`, latest?.id ?? null, 'count', events.length)
+  console.log(
+    '[smoke/sync]',
+    label,
+    'latest event id',
+    latest?.id ?? null,
+    'count',
+    events.length,
+  )
 }
 
 export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
   const [events, setEvents] = useState([])
   const [elapsed, setElapsed] = useState(0)
   const [isHydrated, setIsHydrated] = useState(!useCloud)
+  const [deletingEventId, setDeletingEventId] = useState(null)
 
   const eventsRef = useRef([])
-  const syncGenerationRef = useRef(0)
-  const isDeletingRef = useRef(false)
   const isHydratedRef = useRef(!useCloud)
+  const isDeletingRef = useRef(false)
+  const refetchChainRef = useRef(Promise.resolve())
+  const realtimeTimerRef = useRef(null)
+  const suppressRealtimeUntilRef = useRef(0)
 
   const commitEvents = useCallback((rawEvents, source) => {
     const sorted = sortEventsByTimestamp(rawEvents)
@@ -60,39 +71,74 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
     return normalized
   }, [])
 
-  const pullFromSupabase = useCallback(
-    async (source, { force = false } = {}) => {
+  const runRefetch = useCallback(
+    async (source) => {
       if (!useCloud) {
         const local = loadOfflineEvents()
-        console.log(`${LOG} ${source} offline events`, local)
-        return commitEvents(local, source)
+        commitEvents(local, source)
+        console.log('[smoke] refetch success', source, '(offline)')
+        return true
       }
 
-      if (isDeletingRef.current && !force) {
-        return eventsRef.current
-      }
-
-      const generation = ++syncGenerationRef.current
       const result = await fetchEvents()
-
-      if (generation !== syncGenerationRef.current) {
-        return eventsRef.current
-      }
-
       if (!result.ok) {
-        console.warn(`${LOG} fetch failed (${source})`, result.error, 'user', result.userId)
-        return null
+        console.warn('[smoke] refetch failed', source, result.error)
+        return false
       }
 
-      console.log(`${LOG} ${source} fetched events`, result.events, 'user', result.userId)
       clearLegacyStorage()
-      return commitEvents(result.events, source)
+      commitEvents(result.events, source)
+      console.log('[smoke] refetch success', source, 'count', result.events.length)
+      return true
     },
     [commitEvents],
   )
 
-  const pullFromSupabaseRef = useRef(pullFromSupabase)
-  pullFromSupabaseRef.current = pullFromSupabase
+  const enqueueRefetch = useCallback(
+    (source, { allowDuringDelete = false } = {}) => {
+      if (isDeletingRef.current && !allowDuringDelete) {
+        console.log('[smoke] refetch skipped (deleting)', source)
+        return Promise.resolve(false)
+      }
+
+      const task = refetchChainRef.current
+        .then(() => runRefetch(source))
+        .catch(err => {
+          console.warn('[smoke] refetch error', source, err)
+          return false
+        })
+
+      refetchChainRef.current = task
+      return task
+    },
+    [runRefetch],
+  )
+
+  const enqueueRefetchRef = useRef(enqueueRefetch)
+  enqueueRefetchRef.current = enqueueRefetch
+
+  const scheduleRealtimeReconcile = useCallback(() => {
+    if (isDeletingRef.current) {
+      console.log('[smoke] realtime ignored (deleting in progress)')
+      return
+    }
+
+    if (Date.now() < suppressRealtimeUntilRef.current) {
+      console.log('[smoke] realtime suppressed (post-delete cooldown)')
+      return
+    }
+
+    if (realtimeTimerRef.current) {
+      clearTimeout(realtimeTimerRef.current)
+    }
+
+    realtimeTimerRef.current = setTimeout(() => {
+      realtimeTimerRef.current = null
+      if (isDeletingRef.current) return
+      if (Date.now() < suppressRealtimeUntilRef.current) return
+      enqueueRefetchRef.current('realtime')
+    }, REALTIME_DEBOUNCE_MS)
+  }, [])
 
   useEffect(() => {
     isHydratedRef.current = isHydrated
@@ -104,7 +150,6 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
     async function bootstrap() {
       if (!useCloud) {
         const local = loadOfflineEvents()
-        console.log(`${LOG} initial offline events`, local)
         if (!cancelled) {
           commitEvents(local, 'initial-offline')
           setIsHydrated(true)
@@ -113,20 +158,18 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
       }
 
       for (let attempt = 0; attempt < 50 && !cancelled; attempt += 1) {
-        const committed = await pullFromSupabaseRef.current('initial', { force: true })
-
-        if (committed != null) {
+        const ok = await enqueueRefetchRef.current('initial', { allowDuringDelete: true })
+        if (ok) {
           if (!cancelled) {
             setIsHydrated(true)
-            console.log(`${LOG} hydration complete (attempt ${attempt + 1})`)
+            console.log('[smoke/sync] hydration complete', `(attempt ${attempt + 1})`)
           }
           return
         }
-
         await new Promise(r => setTimeout(r, 300))
       }
 
-      console.error(`${LOG} initial fetch failed after retries`)
+      console.error('[smoke/sync] initial fetch failed after retries')
     }
 
     bootstrap()
@@ -140,8 +183,8 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
     if (!useCloud || !isHydrated) return undefined
 
     const onVisible = () => {
-      if (document.visibilityState === 'visible' && !isDeletingRef.current) {
-        pullFromSupabaseRef.current('visibility')
+      if (document.visibilityState === 'visible') {
+        enqueueRefetchRef.current('visibility')
       }
     }
 
@@ -170,14 +213,10 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
             filter: `user_id=eq.${userId}`,
           },
           payload => {
-            console.log(`${LOG} realtime`, payload.eventType, {
-              new: payload.new,
-              old: payload.old,
+            console.log('[smoke] realtime event received', payload.eventType, {
+              id: payload.new?.id ?? payload.old?.id,
             })
-
-            if (isDeletingRef.current) return
-
-            pullFromSupabaseRef.current('realtime')
+            scheduleRealtimeReconcile()
           },
         )
         .subscribe()
@@ -187,11 +226,14 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
 
     return () => {
       cancelled = true
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current)
+      }
       if (channel) {
         supabase.removeChannel(channel)
       }
     }
-  }, [isHydrated])
+  }, [isHydrated, scheduleRealtimeReconcile])
 
   useEffect(() => {
     if (!isHydrated) return undefined
@@ -222,48 +264,79 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
 
     const result = await addSmokingEvent(event)
     if (!result.ok) {
-      console.warn(`${LOG} add failed`, result.error)
+      console.warn('[smoke] add failed', result.error)
       return false
     }
 
-    await pullFromSupabase('after-add', { force: true })
+    suppressRealtimeUntilRef.current = Date.now() + REALTIME_SUPPRESS_MS
+    await enqueueRefetch('after-add', { allowDuringDelete: true })
 
     try {
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
     } catch {}
 
     return true
-  }, [commitEvents, pullFromSupabase])
+  }, [commitEvents, enqueueRefetch])
 
   const removeEvent = useCallback(
     async (eventId) => {
       const id = Number(eventId)
       if (!Number.isFinite(id)) return false
 
-      if (!useCloud) {
-        const next = eventsRef.current.filter(e => Number(e.id) !== id)
-        commitEvents(next, 'delete-offline')
-        return true
+      if (isDeletingRef.current) {
+        console.log('[smoke] delete skipped (already in progress)', id)
+        return false
       }
 
+      if (!useCloud) {
+        console.log('[smoke] delete started', id, '(offline)')
+        setDeletingEventId(id)
+        isDeletingRef.current = true
+        try {
+          const next = eventsRef.current.filter(e => Number(e.id) !== id)
+          commitEvents(next, 'delete-offline')
+          console.log('[smoke] refetch success', 'delete-offline')
+          return true
+        } finally {
+          isDeletingRef.current = false
+          setDeletingEventId(null)
+        }
+      }
+
+      console.log('[smoke] delete started', id)
+      setDeletingEventId(id)
       isDeletingRef.current = true
-      syncGenerationRef.current += 1
+      suppressRealtimeUntilRef.current = Date.now() + REALTIME_SUPPRESS_MS
+
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current)
+        realtimeTimerRef.current = null
+      }
 
       try {
         const result = await deleteSmokingEvent(id)
 
         if (!result.ok) {
-          console.warn(`${LOG} delete failed id`, id, result.error)
+          console.warn('[smoke] delete failed', id, result.error)
           return false
         }
 
-        const committed = await pullFromSupabase('after-delete', { force: true })
-        return committed != null
+        console.log('[smoke] delete success', id)
+
+        const refetched = await enqueueRefetch('after-delete', { allowDuringDelete: true })
+        if (!refetched) {
+          console.warn('[smoke] refetch failed after delete', id)
+          return false
+        }
+
+        suppressRealtimeUntilRef.current = Date.now() + REALTIME_SUPPRESS_MS
+        return true
       } finally {
         isDeletingRef.current = false
+        setDeletingEventId(null)
       }
     },
-    [commitEvents, pullFromSupabase],
+    [commitEvents, enqueueRefetch],
   )
 
   const getTodayCount = useCallback(() => {
@@ -282,11 +355,12 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
     events,
     elapsed,
     isHydrated,
+    deletingEventId,
     reset,
     removeEvent,
     getTodayCount,
     getEventsForDay,
     midnightTick,
-    refresh: () => pullFromSupabase('manual', { force: true }),
+    refresh: () => enqueueRefetch('manual'),
   }
 }

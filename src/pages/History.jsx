@@ -56,10 +56,12 @@ export default function History({
   selectedDate,
   setSelectedDate,
   removeEvent,
+  deletingEventId = null,
   midnightTick = 0,
 }) {
   const [pendingDelete, setPendingDelete] = useState(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+
+  const isDeleteBusy = deletingEventId != null
 
   const currentDate = selectedDate
 
@@ -80,6 +82,7 @@ export default function History({
   )
 
   const goBack = () => {
+    if (isDeleteBusy) return
     setSelectedDate(prev => {
       const d = new Date(prev)
       d.setDate(d.getDate() - 1)
@@ -88,60 +91,62 @@ export default function History({
   }
 
   const goForward = () => {
-    if (canGoForward) {
-      setSelectedDate(prev => {
-        const d = new Date(prev)
-        d.setDate(d.getDate() + 1)
-        return d
-      })
-    }
+    if (!canGoForward || isDeleteBusy) return
+    setSelectedDate(prev => {
+      const d = new Date(prev)
+      d.setDate(d.getDate() + 1)
+      return d
+    })
   }
 
   const goToday = () => {
+    if (isDeleteBusy) return
     setSelectedDate(getStartOfLocalDay())
   }
 
   const openDeleteConfirm = useCallback((event, e) => {
+    if (isDeleteBusy) return
     e.preventDefault()
     e.stopPropagation()
     setPendingDelete(event)
-  }, [])
+  }, [isDeleteBusy])
 
   const closeDeleteConfirm = useCallback(() => {
-    if (!isDeleting) {
+    if (!isDeleteBusy) {
       setPendingDelete(null)
     }
-  }, [isDeleting])
+  }, [isDeleteBusy])
 
   const confirmDelete = useCallback(async () => {
-    if (!pendingDelete || !removeEvent || isDeleting) return
+    if (!pendingDelete || !removeEvent || isDeleteBusy) return
 
     const event = pendingDelete
-    setIsDeleting(true)
+    setPendingDelete(null)
 
-    try {
-      const ok = await removeEvent(event.id)
-      if (ok) {
-        setPendingDelete(null)
-        try {
-          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
-        } catch {}
-      }
-    } finally {
-      setIsDeleting(false)
+    const ok = await removeEvent(event.id)
+    if (ok) {
+      try {
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
+      } catch {}
     }
-  }, [pendingDelete, removeEvent, isDeleting])
+  }, [pendingDelete, removeEvent, isDeleteBusy])
 
   return (
-    <div className="history">
+    <div className={`history ${isDeleteBusy ? 'history--busy' : ''}`}>
       <div className="day-nav">
-        <button type="button" className="nav-arrow" onClick={goBack} aria-label="Предыдущий день">
+        <button
+          type="button"
+          className="nav-arrow"
+          onClick={goBack}
+          disabled={isDeleteBusy}
+          aria-label="Предыдущий день"
+        >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
 
-        <button type="button" className="day-title" onClick={goToday}>
+        <button type="button" className="day-title" onClick={goToday} disabled={isDeleteBusy}>
           <span className="day-name">{formatDate(currentDate)}</span>
           {!isToday && <span className="day-return">↩ сегодня</span>}
         </button>
@@ -150,7 +155,7 @@ export default function History({
           type="button"
           className={`nav-arrow ${!canGoForward ? 'disabled' : ''}`}
           onClick={goForward}
-          disabled={!canGoForward}
+          disabled={!canGoForward || isDeleteBusy}
           aria-label="Следующий день"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -183,37 +188,48 @@ export default function History({
             </div>
           ) : (
             <ul className="events-list-inner" key={`list-${dayKey}`}>
-              {events.map((event, i) => (
-                <li key={event.id} className="event-item">
-                  <span className="event-dot" aria-hidden />
-                  <div className="event-content">
-                    <span className="event-action">
-                      Покурил — {formatSmokeDateTime(event.timestamp)}
-                    </span>
-                    <span className="event-duration">
-                      {formatDuration(event.duration)}
-                    </span>
-                  </div>
-                  <span className="event-index">#{events.length - i}</span>
-                  <button
-                    type="button"
-                    className="event-delete"
-                    onClick={e => openDeleteConfirm(event, e)}
-                    disabled={isDeleting}
-                    aria-label="Удалить запись"
+              {events.map((event, i) => {
+                const isRowDeleting = deletingEventId === event.id
+                return (
+                  <li
+                    key={event.id}
+                    className={`event-item ${isRowDeleting ? 'event-item--deleting' : ''}`}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                      <path
-                        d="M9 9h6M10 11v6M14 11v6M6 7h12l-1 14H7L6 7zM9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                </li>
-              ))}
+                    <span className="event-dot" aria-hidden />
+                    <div className="event-content">
+                      <span className="event-action">
+                        Покурил — {formatSmokeDateTime(event.timestamp)}
+                      </span>
+                      <span className="event-duration">
+                        {isRowDeleting ? 'Удаление…' : formatDuration(event.duration)}
+                      </span>
+                    </div>
+                    <span className="event-index">#{events.length - i}</span>
+                    <button
+                      type="button"
+                      className="event-delete"
+                      onClick={e => openDeleteConfirm(event, e)}
+                      disabled={isDeleteBusy}
+                      aria-label="Удалить запись"
+                      aria-busy={isRowDeleting}
+                    >
+                      {isRowDeleting ? (
+                        <span className="event-delete-spinner" aria-hidden />
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                          <path
+                            d="M9 9h6M10 11v6M14 11v6M6 7h12l-1 14H7L6 7zM9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
@@ -230,8 +246,8 @@ export default function History({
             ? `Удалить запись от ${formatSmokeDateTime(pendingDelete.timestamp)}?`
             : ''
         }
-        confirmLabel={isDeleting ? 'Удаление…' : 'Удалить'}
-        busy={isDeleting}
+        confirmLabel={isDeleteBusy ? 'Удаление…' : 'Удалить'}
+        busy={isDeleteBusy}
         onConfirm={confirmDelete}
         onCancel={closeDeleteConfirm}
       />
