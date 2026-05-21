@@ -235,14 +235,6 @@
   }
 }
 
-.history--busy {
-  pointer-events: none;
-}
-
-.history--busy .event-delete,
-.history--busy .confirm-overlay {
-  pointer-events: auto;
-}
 
 @media (hover: hover) {
   .event-delete:hover {

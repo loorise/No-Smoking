@@ -1,7 +1,9 @@
-import { useMemo, useCallback, useState } from 'react'
+import { useMemo, useCallback, useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { getLocalDateKey } from '../hooks/useSmoke'
 import { getStartOfLocalDay } from '../utils/localDate'
 import { calcDayStats } from '../utils/dayStats'
+import { logSmokeState } from '../utils/debugLog'
 import ConfirmDialog from '../components/ConfirmDialog'
 import DayStatsCard from '../components/DayStatsCard'
 import './History.css'
@@ -59,32 +61,56 @@ export default function History({
   deletingEventId = null,
   midnightTick = 0,
 }) {
+  const location = useLocation()
   const [pendingDelete, setPendingDelete] = useState(null)
 
   const isDeleteBusy = deletingEventId != null
 
-  const currentDate = selectedDate
+  const safeSelectedDate = useMemo(() => {
+    const d = selectedDate instanceof Date ? selectedDate : new Date(selectedDate)
+    return Number.isNaN(d.getTime()) ? getStartOfLocalDay() : d
+  }, [selectedDate])
 
   const events = useMemo(() => {
-    const key = getLocalDateKey(currentDate)
+    const key = getLocalDateKey(safeSelectedDate)
     return allEvents
       .filter(e => getLocalDateKey(new Date(e.timestamp)) === key)
       .sort((a, b) => b.timestamp - a.timestamp)
-  }, [allEvents, currentDate, midnightTick])
+  }, [allEvents, safeSelectedDate, midnightTick])
 
-  const dayKey = getLocalDateKey(currentDate)
-  const isToday = formatDate(currentDate) === 'Сегодня'
+  const dayKey = getLocalDateKey(safeSelectedDate)
+  const isToday = formatDate(safeSelectedDate) === 'Сегодня'
   const canGoForward = !isToday
 
   const dayStats = useMemo(
-    () => calcDayStats(events, currentDate),
-    [events, currentDate, midnightTick],
+    () => calcDayStats(events, safeSelectedDate),
+    [events, safeSelectedDate, midnightTick],
   )
+
+  useEffect(() => {
+    logSmokeState('rerender History', {
+      pathname: location.pathname,
+      selectedDate: dayKey,
+      dayEventsLength: events.length,
+      allEventsLength: allEvents.length,
+      deletingEventId,
+      pendingDeleteId: pendingDelete?.id ?? null,
+      isDeleteBusy,
+    })
+  }, [
+    location.pathname,
+    dayKey,
+    events.length,
+    allEvents.length,
+    deletingEventId,
+    pendingDelete,
+    isDeleteBusy,
+  ])
 
   const goBack = () => {
     if (isDeleteBusy) return
     setSelectedDate(prev => {
-      const d = new Date(prev)
+      const d = new Date(prev instanceof Date ? prev : safeSelectedDate)
       d.setDate(d.getDate() - 1)
       return d
     })
@@ -93,7 +119,7 @@ export default function History({
   const goForward = () => {
     if (!canGoForward || isDeleteBusy) return
     setSelectedDate(prev => {
-      const d = new Date(prev)
+      const d = new Date(prev instanceof Date ? prev : safeSelectedDate)
       d.setDate(d.getDate() + 1)
       return d
     })
@@ -120,19 +146,29 @@ export default function History({
   const confirmDelete = useCallback(async () => {
     if (!pendingDelete || !removeEvent || isDeleteBusy) return
 
-    const event = pendingDelete
-    setPendingDelete(null)
+    const eventId = Number(pendingDelete.id)
+    if (!Number.isFinite(eventId)) {
+      setPendingDelete(null)
+      return
+    }
 
-    const ok = await removeEvent(event.id)
-    if (ok) {
-      try {
-        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
-      } catch {}
+    try {
+      const ok = await removeEvent(eventId)
+      if (ok) {
+        console.log('[smoke] delete flow complete', eventId)
+        try {
+          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
+        } catch {}
+      }
+    } catch (err) {
+      console.error('[smoke] confirmDelete error', err)
+    } finally {
+      setPendingDelete(null)
     }
   }, [pendingDelete, removeEvent, isDeleteBusy])
 
   return (
-    <div className={`history ${isDeleteBusy ? 'history--busy' : ''}`}>
+    <div className="history">
       <div className="day-nav">
         <button
           type="button"
@@ -147,7 +183,7 @@ export default function History({
         </button>
 
         <button type="button" className="day-title" onClick={goToday} disabled={isDeleteBusy}>
-          <span className="day-name">{formatDate(currentDate)}</span>
+          <span className="day-name">{formatDate(safeSelectedDate)}</span>
           {!isToday && <span className="day-return">↩ сегодня</span>}
         </button>
 
@@ -172,9 +208,9 @@ export default function History({
       </div>
 
       <div className="history-scroll">
-        <div className="events-list">
+        <div className="events-list" key={dayKey}>
           {events.length === 0 ? (
-            <div className="empty-state" key={`empty-${dayKey}`}>
+            <div className="empty-state">
               <div className="empty-icon">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
                   <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1" opacity="0.3"/>
@@ -187,13 +223,13 @@ export default function History({
               {isToday && <p className="empty-sub">так держать!</p>}
             </div>
           ) : (
-            <ul className="events-list-inner" key={`list-${dayKey}`}>
+            <ul className="events-list-inner">
               {events.map((event, i) => {
-                const isRowDeleting = deletingEventId === event.id
+                const isRowDeleting = Number(deletingEventId) === Number(event.id)
                 return (
                   <li
                     key={event.id}
-                    className={`event-item ${isRowDeleting ? 'event-item--deleting' : ''}`}
+                    className={isRowDeleting ? 'event-item event-item--deleting' : 'event-item'}
                   >
                     <span className="event-dot" aria-hidden />
                     <div className="event-content">

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import './ConfirmDialog.css'
 
 export default function ConfirmDialog({
@@ -11,13 +12,13 @@ export default function ConfirmDialog({
 }) {
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
       className="confirm-overlay"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
-      onClick={onCancel}
+      onClick={busy ? undefined : onCancel}
     >
       <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
         <p id="confirm-dialog-title" className="confirm-message">
@@ -42,6 +43,7 @@ export default function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

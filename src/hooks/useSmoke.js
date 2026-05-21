@@ -27,6 +27,16 @@ export { getLocalDateKey } from '../utils/localDate'
 const useCloud = isSupabaseConfigured
 const REALTIME_DEBOUNCE_MS = 450
 const REALTIME_SUPPRESS_MS = 1200
+const REFETCH_TIMEOUT_MS = 12000
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timeout`)), ms)
+    }),
+  ])
+}
 
 function logLatest(events, label) {
   const latest = getLatestEvent(events)
@@ -49,11 +59,30 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
   const eventsRef = useRef([])
   const isHydratedRef = useRef(!useCloud)
   const isDeletingRef = useRef(false)
+  const isMountedRef = useRef(true)
   const refetchChainRef = useRef(Promise.resolve())
   const realtimeTimerRef = useRef(null)
   const suppressRealtimeUntilRef = useRef(0)
 
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  const clearDeletingState = useCallback(() => {
+    isDeletingRef.current = false
+    if (isMountedRef.current) {
+      setDeletingEventId(null)
+    }
+  }, [])
+
   const commitEvents = useCallback((rawEvents, source) => {
+    if (!isMountedRef.current) {
+      eventsRef.current = normalizeEventDurations(sortEventsByTimestamp(rawEvents))
+      return eventsRef.current
+    }
     const sorted = sortEventsByTimestamp(rawEvents)
     const normalized = normalizeEventDurations(sorted)
 
@@ -102,7 +131,7 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
       }
 
       const task = refetchChainRef.current
-        .then(() => runRefetch(source))
+        .then(() => withTimeout(runRefetch(source), REFETCH_TIMEOUT_MS, source))
         .catch(err => {
           console.warn('[smoke] refetch error', source, err)
           return false
@@ -290,21 +319,21 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
 
       if (!useCloud) {
         console.log('[smoke] delete started', id, '(offline)')
-        setDeletingEventId(id)
+        if (isMountedRef.current) setDeletingEventId(id)
         isDeletingRef.current = true
         try {
           const next = eventsRef.current.filter(e => Number(e.id) !== id)
           commitEvents(next, 'delete-offline')
           console.log('[smoke] refetch success', 'delete-offline')
+          console.log('[smoke] rerender', { eventsLength: next.length })
           return true
         } finally {
-          isDeletingRef.current = false
-          setDeletingEventId(null)
+          clearDeletingState()
         }
       }
 
       console.log('[smoke] delete started', id)
-      setDeletingEventId(id)
+      if (isMountedRef.current) setDeletingEventId(id)
       isDeletingRef.current = true
       suppressRealtimeUntilRef.current = Date.now() + REALTIME_SUPPRESS_MS
 
@@ -323,20 +352,29 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
 
         console.log('[smoke] delete success', id)
 
+        clearDeletingState()
+
         const refetched = await enqueueRefetch('after-delete', { allowDuringDelete: true })
         if (!refetched) {
           console.warn('[smoke] refetch failed after delete', id)
           return false
         }
 
+        console.log('[smoke] rerender', {
+          eventsLength: eventsRef.current.length,
+          latestId: getLatestEvent(eventsRef.current)?.id ?? null,
+        })
+
         suppressRealtimeUntilRef.current = Date.now() + REALTIME_SUPPRESS_MS
         return true
+      } catch (err) {
+        console.error('[smoke] delete flow error', id, err)
+        return false
       } finally {
-        isDeletingRef.current = false
-        setDeletingEventId(null)
+        clearDeletingState()
       }
     },
-    [commitEvents, enqueueRefetch],
+    [commitEvents, enqueueRefetch, clearDeletingState],
   )
 
   const getTodayCount = useCallback(() => {

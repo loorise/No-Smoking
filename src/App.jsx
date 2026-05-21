@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react'
-import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
+import { Routes, Route, NavLink } from 'react-router-dom'
 import { useSmoke } from './hooks/useSmoke'
 import { useMidnightReset } from './hooks/useMidnightReset'
 import { useTheme } from './hooks/useTheme'
 import { getStartOfLocalDay } from './utils/localDate'
+import ErrorBoundary from './components/ErrorBoundary'
 import PageTransition from './components/PageTransition'
 import Home from './pages/Home'
 import History from './pages/History'
@@ -12,7 +12,6 @@ import './App.css'
 
 export default function App() {
   useTheme()
-  const location = useLocation()
 
   const [selectedDate, setSelectedDate] = useState(() => getStartOfLocalDay())
 
@@ -26,9 +25,9 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="page-container">
-        <AnimatePresence mode="wait">
-          <Routes location={location} key={location.pathname}>
+      <ErrorBoundary>
+        <div className="page-container">
+          <Routes>
             <Route
               path="/"
               element={
@@ -52,8 +51,8 @@ export default function App() {
               }
             />
           </Routes>
-        </AnimatePresence>
-      </div>
+        </div>
+      </ErrorBoundary>
 
       <nav className="tab-bar">
         <NavLink to="/" end className={({ isActive }) => `tab-item ${isActive ? 'active' : ''}`}>
