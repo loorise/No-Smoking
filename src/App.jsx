@@ -5,7 +5,6 @@ import { useMidnightReset } from './hooks/useMidnightReset'
 import { useTheme } from './hooks/useTheme'
 import { getStartOfLocalDay } from './utils/localDate'
 import ErrorBoundary from './components/ErrorBoundary'
-import PageTransition from './components/PageTransition'
 import Home from './pages/Home'
 import History from './pages/History'
 import './App.css'
@@ -28,26 +27,17 @@ export default function App() {
       <ErrorBoundary>
         <div className="page-container">
           <Routes>
-            <Route
-              path="/"
-              element={
-                <PageTransition>
-                  <Home {...smokeCtx} dayKey={dayKey} />
-                </PageTransition>
-              }
-            />
+            <Route path="/" element={<Home {...smokeCtx} dayKey={dayKey} />} />
             <Route
               path="/history"
               element={
-                <PageTransition>
-                  <History
-                    {...smokeCtx}
-                    selectedDate={selectedDate}
-                    setSelectedDate={setSelectedDate}
-                    dayKey={dayKey}
-                    midnightTick={tick}
-                  />
-                </PageTransition>
+                <History
+                  {...smokeCtx}
+                  selectedDate={selectedDate}
+                  setSelectedDate={setSelectedDate}
+                  dayKey={dayKey}
+                  midnightTick={tick}
+                />
               }
             />
           </Routes>

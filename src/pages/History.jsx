@@ -1,9 +1,7 @@
-import { useMemo, useCallback, useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useMemo, useCallback, useState } from 'react'
 import { getLocalDateKey } from '../hooks/useSmoke'
 import { getStartOfLocalDay } from '../utils/localDate'
 import { calcDayStats } from '../utils/dayStats'
-import { logSmokeState } from '../utils/debugLog'
 import ConfirmDialog from '../components/ConfirmDialog'
 import DayStatsCard from '../components/DayStatsCard'
 import './History.css'
@@ -57,14 +55,14 @@ export default function History({
   events: allEvents = [],
   selectedDate,
   setSelectedDate,
-  removeEvent,
-  deletingEventId = null,
+  deleteEvent,
+  isDeleting = false,
+  deleteError = null,
   midnightTick = 0,
 }) {
-  const location = useLocation()
-  const [pendingDelete, setPendingDelete] = useState(null)
-
-  const isDeleteBusy = deletingEventId != null
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmId, setConfirmId] = useState(null)
+  const [confirmMessage, setConfirmMessage] = useState('')
 
   const safeSelectedDate = useMemo(() => {
     const d = selectedDate instanceof Date ? selectedDate : new Date(selectedDate)
@@ -87,28 +85,8 @@ export default function History({
     [events, safeSelectedDate, midnightTick],
   )
 
-  useEffect(() => {
-    logSmokeState('rerender History', {
-      pathname: location.pathname,
-      selectedDate: dayKey,
-      dayEventsLength: events.length,
-      allEventsLength: allEvents.length,
-      deletingEventId,
-      pendingDeleteId: pendingDelete?.id ?? null,
-      isDeleteBusy,
-    })
-  }, [
-    location.pathname,
-    dayKey,
-    events.length,
-    allEvents.length,
-    deletingEventId,
-    pendingDelete,
-    isDeleteBusy,
-  ])
-
   const goBack = () => {
-    if (isDeleteBusy) return
+    if (isDeleting) return
     setSelectedDate(prev => {
       const d = new Date(prev instanceof Date ? prev : safeSelectedDate)
       d.setDate(d.getDate() - 1)
@@ -117,7 +95,7 @@ export default function History({
   }
 
   const goForward = () => {
-    if (!canGoForward || isDeleteBusy) return
+    if (!canGoForward || isDeleting) return
     setSelectedDate(prev => {
       const d = new Date(prev instanceof Date ? prev : safeSelectedDate)
       d.setDate(d.getDate() + 1)
@@ -126,55 +104,58 @@ export default function History({
   }
 
   const goToday = () => {
-    if (isDeleteBusy) return
+    if (isDeleting) return
     setSelectedDate(getStartOfLocalDay())
   }
 
   const openDeleteConfirm = useCallback((event, e) => {
-    if (isDeleteBusy) return
+    if (isDeleting) return
     e.preventDefault()
     e.stopPropagation()
-    setPendingDelete(event)
-  }, [isDeleteBusy])
+    setConfirmId(event.id)
+    setConfirmMessage(`Удалить запись от ${formatSmokeDateTime(event.timestamp)}?`)
+    setConfirmOpen(true)
+  }, [isDeleting])
 
   const closeDeleteConfirm = useCallback(() => {
-    if (!isDeleteBusy) {
-      setPendingDelete(null)
+    if (!isDeleting) {
+      setConfirmOpen(false)
+      setConfirmId(null)
+      setConfirmMessage('')
     }
-  }, [isDeleteBusy])
+  }, [isDeleting])
 
   const confirmDelete = useCallback(async () => {
-    if (!pendingDelete || !removeEvent || isDeleteBusy) return
+    if (!confirmId || !deleteEvent || isDeleting) return
 
-    const eventId = Number(pendingDelete.id)
-    if (!Number.isFinite(eventId)) {
-      setPendingDelete(null)
-      return
-    }
+    const id = Number(confirmId)
+    const result = await deleteEvent(id)
 
-    try {
-      const ok = await removeEvent(eventId)
-      if (ok) {
-        console.log('[smoke] delete flow complete', eventId)
-        try {
-          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
-        } catch {}
-      }
-    } catch (err) {
-      console.error('[smoke] confirmDelete error', err)
-    } finally {
-      setPendingDelete(null)
+    setConfirmOpen(false)
+    setConfirmId(null)
+    setConfirmMessage('')
+
+    if (result.ok) {
+      try {
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
+      } catch {}
     }
-  }, [pendingDelete, removeEvent, isDeleteBusy])
+  }, [confirmId, deleteEvent, isDeleting])
 
   return (
     <div className="history">
+      {deleteError && (
+        <p className="history-error" role="alert">
+          Не удалось удалить: {deleteError}
+        </p>
+      )}
+
       <div className="day-nav">
         <button
           type="button"
           className="nav-arrow"
           onClick={goBack}
-          disabled={isDeleteBusy}
+          disabled={isDeleting}
           aria-label="Предыдущий день"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -182,7 +163,7 @@ export default function History({
           </svg>
         </button>
 
-        <button type="button" className="day-title" onClick={goToday} disabled={isDeleteBusy}>
+        <button type="button" className="day-title" onClick={goToday} disabled={isDeleting}>
           <span className="day-name">{formatDate(safeSelectedDate)}</span>
           {!isToday && <span className="day-return">↩ сегодня</span>}
         </button>
@@ -191,7 +172,7 @@ export default function History({
           type="button"
           className={`nav-arrow ${!canGoForward ? 'disabled' : ''}`}
           onClick={goForward}
-          disabled={!canGoForward || isDeleteBusy}
+          disabled={!canGoForward || isDeleting}
           aria-label="Следующий день"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -208,7 +189,7 @@ export default function History({
       </div>
 
       <div className="history-scroll">
-        <div className="events-list" key={dayKey}>
+        <div className="events-list">
           {events.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">
@@ -224,48 +205,37 @@ export default function History({
             </div>
           ) : (
             <ul className="events-list-inner">
-              {events.map((event, i) => {
-                const isRowDeleting = Number(deletingEventId) === Number(event.id)
-                return (
-                  <li
-                    key={event.id}
-                    className={isRowDeleting ? 'event-item event-item--deleting' : 'event-item'}
+              {events.map((event, i) => (
+                <li key={event.id} className="event-item">
+                  <span className="event-dot" aria-hidden />
+                  <div className="event-content">
+                    <span className="event-action">
+                      Покурил — {formatSmokeDateTime(event.timestamp)}
+                    </span>
+                    <span className="event-duration">
+                      {formatDuration(event.duration)}
+                    </span>
+                  </div>
+                  <span className="event-index">#{events.length - i}</span>
+                  <button
+                    type="button"
+                    className="event-delete"
+                    onClick={e => openDeleteConfirm(event, e)}
+                    disabled={isDeleting}
+                    aria-label="Удалить запись"
                   >
-                    <span className="event-dot" aria-hidden />
-                    <div className="event-content">
-                      <span className="event-action">
-                        Покурил — {formatSmokeDateTime(event.timestamp)}
-                      </span>
-                      <span className="event-duration">
-                        {isRowDeleting ? 'Удаление…' : formatDuration(event.duration)}
-                      </span>
-                    </div>
-                    <span className="event-index">#{events.length - i}</span>
-                    <button
-                      type="button"
-                      className="event-delete"
-                      onClick={e => openDeleteConfirm(event, e)}
-                      disabled={isDeleteBusy}
-                      aria-label="Удалить запись"
-                      aria-busy={isRowDeleting}
-                    >
-                      {isRowDeleting ? (
-                        <span className="event-delete-spinner" aria-hidden />
-                      ) : (
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                          <path
-                            d="M9 9h6M10 11v6M14 11v6M6 7h12l-1 14H7L6 7zM9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
-                    </button>
-                  </li>
-                )
-              })}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path
+                        d="M9 9h6M10 11v6M14 11v6M6 7h12l-1 14H7L6 7zM9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
         </div>
@@ -276,14 +246,10 @@ export default function History({
       </footer>
 
       <ConfirmDialog
-        open={Boolean(pendingDelete)}
-        message={
-          pendingDelete
-            ? `Удалить запись от ${formatSmokeDateTime(pendingDelete.timestamp)}?`
-            : ''
-        }
-        confirmLabel={isDeleteBusy ? 'Удаление…' : 'Удалить'}
-        busy={isDeleteBusy}
+        open={confirmOpen}
+        message={confirmMessage}
+        confirmLabel={isDeleting ? 'Удаление…' : 'Удалить'}
+        busy={isDeleting}
         onConfirm={confirmDelete}
         onCancel={closeDeleteConfirm}
       />
