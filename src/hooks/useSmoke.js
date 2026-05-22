@@ -139,44 +139,40 @@ useEffect(() => {
     if (!Number.isFinite(id)) return { ok: false, error: 'invalid_id' }
     if (isDeletingRef.current) return { ok: false, error: 'busy' }
 
-    console.log('[smoke] delete started', id)
     isDeletingRef.current = true
     setIsDeleting(true)
     setDeleteError(null)
 
-    // Optimistic: убираем из UI немедленно
-    const snapshot = eventsRef.current
-    applyNormalizedEvents(
-      snapshot.filter(e => Number(e.id) !== id),
-      { eventsRef, setEvents, setElapsed },
-    )
-
     try {
       if (useCloud) {
         const del = await deleteSmokingEvent(id)
-        if (!del.ok) throw new Error(del.error ?? 'delete_failed')
-        console.log('[smoke] delete confirmed', id)
+        if (!del.ok) {
+          // Delete сам не прошёл — это реальная ошибка
+          setDeleteError(del.error ?? 'delete_failed')
+          return { ok: false, error: del.error }
+        }
       } else {
         const local = loadOfflineEvents().filter(e => Number(e.id) !== id)
         saveOfflineEvents(local)
       }
 
-      // Refetch для синхронизации с сервером
+      // Delete прошёл — делаем fresh fetch, без throw при неудаче
       const loaded = await loadEvents()
       if (!loaded.ok) {
-        // Refetch упал — не критично, optimistic уже применён
-        console.warn('[smoke] refetch after delete failed', loaded.error)
+        // Fetch упал, но delete уже прошёл успешно
+        // Убираем запись локально вручную, не откатываем
+        console.warn('[smoke] refetch after delete failed, applying local filter', loaded.error)
+        const filtered = eventsRef.current.filter(e => Number(e.id) !== id)
+        applyNormalizedEvents(filtered, { eventsRef, setEvents, setElapsed })
       }
 
       return { ok: true }
     } catch (err) {
+      // Сюда попадаем только если deleteSmokingEvent бросил исключение
+      // Не делаем rollback — неизвестно прошло ли удаление
       const message = err?.message ?? 'delete_failed'
-      console.warn('[smoke] delete failed, rolling back', id, message)
-
-      // Rollback к snapshot
-      applyNormalizedEvents(snapshot, { eventsRef, setEvents, setElapsed })
-
-      if (isMountedRef.current) setDeleteError(message)
+      console.warn('[smoke] delete exception', id, message)
+      setDeleteError(message)
       return { ok: false, error: message }
     } finally {
       isDeletingRef.current = false
