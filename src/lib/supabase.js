@@ -22,8 +22,9 @@ function normalizeEvent(row) {
 }
 
 async function resolveSupabaseUserId(maxWaitMs = 15000) {
-  const waited = await waitForUserId({ maxWaitMs, intervalMs: 100 })
-  return waited ?? getUserId()
+  return waitForUserId({ maxWaitMs, intervalMs: 100 })
+  // Если null — вызывающий код вернёт { ok: false, error: 'no_user_id' }
+  // Никакого fallback на test_user
 }
 
 export async function fetchEvents() {
@@ -74,15 +75,12 @@ export async function addSmokingEvent(event) {
   }
 
   try {
-    const { error } = await supabase.from(TABLE).upsert(
-      {
-        id: event.id,
-        user_id: userId,
-        timestamp: event.timestamp,
-        duration: event.duration ?? 0,
-      },
-      { onConflict: 'id' },
-    )
+    const { error } = await supabase.from(TABLE).insert({
+  id: event.id,
+  user_id: userId,
+  timestamp: event.timestamp,
+  duration: event.duration ?? 0,
+})
 
     if (error) {
       return { ok: false, error: error.message }

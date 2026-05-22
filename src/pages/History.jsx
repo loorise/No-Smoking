@@ -126,21 +126,24 @@ export default function History({
   }, [isDeleting])
 
   const confirmDelete = useCallback(async () => {
-    if (!confirmId || !deleteEvent || isDeleting) return
+  if (!confirmId || !deleteEvent || isDeleting) return
 
-    const id = Number(confirmId)
-    const result = await deleteEvent(id)
+  const id = Number(confirmId)
 
-    setConfirmOpen(false)
-    setConfirmId(null)
-    setConfirmMessage('')
+  // Закрываем диалог сразу — не ждём результата
+  setConfirmOpen(false)
+  setConfirmId(null)
+  setConfirmMessage('')
 
-    if (result.ok) {
-      try {
-        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
-      } catch {}
-    }
-  }, [confirmId, deleteEvent, isDeleting])
+  const result = await deleteEvent(id)
+
+  if (result.ok) {
+    try {
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success')
+    } catch {}
+  }
+  // Ошибка покажется через deleteError из пропсов
+}, [confirmId, deleteEvent, isDeleting])
 
   return (
     <div className="history">

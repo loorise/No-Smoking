@@ -56,11 +56,19 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
     }
   }, [])
 
-  const loadEvents = useCallback(async () => {
+ const isLoadingRef = useRef(false)
+
+const loadEvents = useCallback(async () => {
+  if (isLoadingRef.current) {
+    console.log('[smoke] loadEvents skipped — already loading')
+    return { ok: false, error: 'busy' }
+  }
+
+  isLoadingRef.current = true
+  try {
     if (!useCloud) {
       const local = loadOfflineEvents()
       applyNormalizedEvents(local, { eventsRef, setEvents, setElapsed })
-      console.log('[smoke] loadEvents offline', local.length)
       return { ok: true, events: local }
     }
 
@@ -74,42 +82,44 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
     applyNormalizedEvents(result.events, { eventsRef, setEvents, setElapsed })
     console.log('[smoke] loadEvents success', result.events.length)
     return { ok: true, events: result.events }
-  }, [])
+  } finally {
+    isLoadingRef.current = false
+  }
+}, [])
 
-  useEffect(() => {
-    let cancelled = false
+  // Текущий код уже корректно проверяет result.error !== 'no_user_id'
+// Нужно только убедиться что userId стабилен до первого bootstrap
 
-    async function bootstrap() {
-      for (let attempt = 0; attempt < 50 && !cancelled; attempt += 1) {
-        const result = await loadEvents()
-        if (result.ok) {
-          if (isMountedRef.current) setIsHydrated(true)
-          return
-        }
-        if (result.error !== 'no_user_id') break
-        await new Promise(r => setTimeout(r, 300))
+useEffect(() => {
+  let cancelled = false
+
+  async function bootstrap() {
+    // Ждём userId один раз до начала цикла
+    const { waitForUserId } = await import('../lib/telegramAuth')
+    const userId = await waitForUserId({ maxWaitMs: 10000 })
+    
+    if (!userId) {
+      console.warn('[smoke] No userId after wait — skip bootstrap')
+      if (isMountedRef.current) setIsHydrated(true) // разблокировать UI
+      return
+    }
+
+    for (let attempt = 0; attempt < 10 && !cancelled; attempt += 1) {
+      const result = await loadEvents()
+      if (result.ok) {
+        if (isMountedRef.current) setIsHydrated(true)
+        return
       }
+      if (result.error !== 'no_user_id') break
+      await new Promise(r => setTimeout(r, 300))
     }
+    
+    if (isMountedRef.current) setIsHydrated(true)
+  }
 
-    bootstrap()
-
-    return () => {
-      cancelled = true
-    }
-  }, [loadEvents])
-
-  useEffect(() => {
-    if (!isHydrated) return undefined
-
-    const onVisible = () => {
-      if (document.visibilityState === 'visible' && !isDeletingRef.current) {
-        loadEvents()
-      }
-    }
-
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [isHydrated, loadEvents])
+  bootstrap()
+  return () => { cancelled = true }
+}, [loadEvents])
 
   useEffect(() => {
     if (!isHydrated) return undefined
@@ -124,52 +134,57 @@ export function useSmoke({ midnightTick = 0, todayDayKey } = {}) {
   }, [isHydrated])
 
   const deleteEvent = useCallback(
-    async (eventId) => {
-      const id = Number(eventId)
-      if (!Number.isFinite(id)) {
-        return { ok: false, error: 'invalid_id' }
+  async (eventId) => {
+    const id = Number(eventId)
+    if (!Number.isFinite(id)) return { ok: false, error: 'invalid_id' }
+    if (isDeletingRef.current) return { ok: false, error: 'busy' }
+
+    console.log('[smoke] delete started', id)
+    isDeletingRef.current = true
+    setIsDeleting(true)
+    setDeleteError(null)
+
+    // Optimistic: убираем из UI немедленно
+    const snapshot = eventsRef.current
+    applyNormalizedEvents(
+      snapshot.filter(e => Number(e.id) !== id),
+      { eventsRef, setEvents, setElapsed },
+    )
+
+    try {
+      if (useCloud) {
+        const del = await deleteSmokingEvent(id)
+        if (!del.ok) throw new Error(del.error ?? 'delete_failed')
+        console.log('[smoke] delete confirmed', id)
+      } else {
+        const local = loadOfflineEvents().filter(e => Number(e.id) !== id)
+        saveOfflineEvents(local)
       }
 
-      if (isDeletingRef.current) {
-        return { ok: false, error: 'busy' }
+      // Refetch для синхронизации с сервером
+      const loaded = await loadEvents()
+      if (!loaded.ok) {
+        // Refetch упал — не критично, optimistic уже применён
+        console.warn('[smoke] refetch after delete failed', loaded.error)
       }
 
-      console.log('[smoke] delete started', id)
-      isDeletingRef.current = true
-      setIsDeleting(true)
-      setDeleteError(null)
+      return { ok: true }
+    } catch (err) {
+      const message = err?.message ?? 'delete_failed'
+      console.warn('[smoke] delete failed, rolling back', id, message)
 
-      try {
-        if (useCloud) {
-          const del = await deleteSmokingEvent(id)
-          if (!del.ok) {
-            throw new Error(del.error ?? 'delete_failed')
-          }
-          console.log('[smoke] delete success', id)
-        } else {
-          const local = loadOfflineEvents().filter(e => Number(e.id) !== id)
-          saveOfflineEvents(local)
-        }
+      // Rollback к snapshot
+      applyNormalizedEvents(snapshot, { eventsRef, setEvents, setElapsed })
 
-        const loaded = await loadEvents()
-        if (!loaded.ok) {
-          throw new Error(loaded.error ?? 'refetch_failed')
-        }
-
-        console.log('[smoke] refetch success', eventsRef.current.length)
-        return { ok: true }
-      } catch (err) {
-        const message = err?.message ?? 'delete_failed'
-        console.warn('[smoke] delete flow failed', id, message)
-        if (isMountedRef.current) setDeleteError(message)
-        return { ok: false, error: message }
-      } finally {
-        isDeletingRef.current = false
-        if (isMountedRef.current) setIsDeleting(false)
-      }
-    },
-    [loadEvents],
-  )
+      if (isMountedRef.current) setDeleteError(message)
+      return { ok: false, error: message }
+    } finally {
+      isDeletingRef.current = false
+      if (isMountedRef.current) setIsDeleting(false)
+    }
+  },
+  [loadEvents],
+)
 
   const reset = useCallback(async () => {
     const now = Date.now()

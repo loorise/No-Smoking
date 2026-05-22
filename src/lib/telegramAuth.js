@@ -1,4 +1,16 @@
-export const FALLBACK_USER_ID = 'test_user'
+const ANON_USER_KEY = 'smoke_anon_user_id'
+
+function getOrCreateAnonUserId() {
+  try {
+    const existing = localStorage.getItem(ANON_USER_KEY)
+    if (existing) return existing
+    const id = 'anon_' + crypto.randomUUID()
+    localStorage.setItem(ANON_USER_KEY, id)
+    return id
+  } catch {
+    return null
+  }
+}
 const TG_USER_CACHE_KEY = 'smoke_tg_user_id'
 const LEGACY_LOCAL_USER_KEY = 'smoke_tracker_user_id'
 
@@ -94,11 +106,8 @@ export function getUserId() {
   const resolved = resolveUserId()
   if (resolved) return resolved
 
-  if (isTelegramEnv()) {
-    return getCachedTelegramUserId()
-  }
-
-  return FALLBACK_USER_ID
+  // Вне Telegram — анонимный persistent UUID, не test_user
+  return getOrCreateAnonUserId()
 }
 
 /**
@@ -106,7 +115,8 @@ export function getUserId() {
  */
 export function waitForUserId({ maxWaitMs = 5000, intervalMs = 100 } = {}) {
   if (!isTelegramEnv()) {
-    return Promise.resolve(FALLBACK_USER_ID)
+    // Вне Telegram — сразу возвращаем persistent uuid (или null)
+    return Promise.resolve(getOrCreateAnonUserId())
   }
 
   return new Promise(resolve => {
@@ -129,6 +139,7 @@ export function waitForUserId({ maxWaitMs = 5000, intervalMs = 100 } = {}) {
           resolve(cached)
           return
         }
+        // В Telegram env без id — не делаем запрос
         console.warn('[auth] Telegram user id not available; sync skipped')
         resolve(null)
         return
